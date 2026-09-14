@@ -1,0 +1,16 @@
+INFO:__main__:Launched 1000 requests, waiting for completion...
+==================================================
+ Custom Benchmark Result
+==================================================
+  Successful requests:   1000
+  Timed out requests:    0
+  Duration (s):          75.99
+  Total output tokens:   255997
+  Token throughput:      3368.9 tok/s
+  Median TTFT (ms):    184.84
+  P99 TTFT (ms):       3690.25
+  Median ITL (ms):     58.73
+  P99 ITL (ms):        102.56
+==================================================
+
+Results saved to: task3_results/result_vLLM_V1_default.json

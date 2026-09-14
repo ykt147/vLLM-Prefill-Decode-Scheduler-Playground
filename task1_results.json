@@ -1,0 +1,23 @@
+[
+  {
+    "name": "transformers 串行",
+    "time": 174.70653704926372,
+    "throughput": 46.89005997348583,
+    "peak_kv_mb": 67.265625,
+    "note": "batch=1, max_seq=615, 峰值KV = 615 x 112 KB ≈ 67.3 MB"
+  },
+  {
+    "name": "transformers 静态 batching",
+    "time": 3.875684449914843,
+    "throughput": 5004.793411503404,
+    "peak_kv_mb": 3409.0,
+    "note": "batch=64, padded_len=487, 峰值 KV = 64 x 487 x 112 KB ≈ 3409 MB"
+  },
+  {
+    "name": "vLLM 离线",
+    "time": 0.833590897731483,
+    "throughput": 9827.362585524314,
+    "peak_kv_mb": 3079.453125,
+    "note": "total_tokens_in_cache=28155 (estimated)"
+  }
+]

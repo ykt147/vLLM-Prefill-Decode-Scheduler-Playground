@@ -1,0 +1,16 @@
+INFO:__main__:Launched 1000 requests, waiting for completion...
+==================================================
+ Custom Benchmark Result
+==================================================
+  Successful requests:   914
+  Timed out requests:    86
+  Duration (s):          362.92
+  Total output tokens:   233918
+  Token throughput:      644.5 tok/s
+  Median TTFT (ms):    150960.54
+  P99 TTFT (ms):       292833.00
+  Median ITL (ms):     11.95
+  P99 ITL (ms):        13.35
+==================================================
+
+Results saved to: task3_results/result_Strategy_B_PureDecode.json

@@ -1,0 +1,16 @@
+INFO:__main__:Launched 1000 requests, waiting for completion...
+==================================================
+ Custom Benchmark Result
+==================================================
+  Successful requests:   1000
+  Timed out requests:    0
+  Duration (s):          62.73
+  Total output tokens:   41950
+  Token throughput:      668.7 tok/s
+  Median TTFT (ms):    58.12
+  P99 TTFT (ms):       120.26
+  Median ITL (ms):     56.13
+  P99 ITL (ms):        187.43
+==================================================
+
+Results saved to: task3_results/result_Strategy_A_PrefillFirst.json
