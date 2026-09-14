@@ -86,6 +86,33 @@ pip install -r requirements.txt
 ```
 
 ## Task 1: 从 transformers 到 vLLM —— 吞吐量差异
+### 目标
+直观感受 vLLM 的 Continuous Batching + PagedAttention 相对于 Lab 1 中 transformers 朴素 model.generate() 的吞吐优势，并解释差距来源。
+
+### 方法指引
+#### Step 1：构造一个并发负载
+
+准备 64 条 prompt（可从 ShareGPT 采样或自己生成），输入长度在 128–512 之间随机，输出 max_new_tokens=128。
+
+#### Step 2：Baseline —— 朴素 transformers（复用 Lab 1 脚本）
+
+方案 A：串行提交 64 条（for 循环调用 generate），记录总耗时。
+方案 B：padding 静态 batching，将 64 条填充到同长度，一次性 generate，记录总耗时（batch 过大会 OOM，此时报告你能塞进显存的最大 batch）。
+Step 3：vLLM 离线推理
+
+```
+from vllm import LLM, SamplingParams
+
+llm = LLM(model="Qwen/Qwen3-0.6B", gpu_memory_utilization=0.9)
+sampling = SamplingParams(temperature=0.0, max_tokens=128)
+outputs = llm.generate(prompts, sampling)  # 一次性提交 64 条
+```
+
+记录端到端耗时与峰值显存。
+
+vLLM —— 通过 scheduler 回调读 metrics：
+离线 LLM(...) 模式下没有 /metrics HTTP 端点，可继承 vllm.v1.core.sched.scheduler.Scheduler，在 schedule() 内每步累加 sum(req.num_computed_tokens for req in self.running)，记录最大值后把它写入文件供主进程读取。
+在线 vllm serve 模式（Task 2/3 是使用在线vllm）：可以直接 curl http://host:port/metrics | grep vllm:gpu_cache_usage_perc（表示当前实际已使用的 KV Cache 空间占整个 GPU KV Cache 容量的比例），再乘以 GPU KV cache size (启动日志中那个 token 数)表示实际使用的 KV Cache，进一步可用peak_bytes = peak_tokens × per_token_KV_bytes换算成字节表示。
 
 ### 运行方式
 
@@ -117,7 +144,8 @@ python task1_vllm_vs_hf.py
 - 输出长度: max_new_tokens=128
 
 ## Task 2：max_num_batched_tokens 扫描实验
-
+### 目标
+vLLM V1 调度器默认开启 chunked prefill，max_num_batched_tokens 是其最重要的参数之一（表每step的token预算，决定每步 forward 处理多少 token），直接影响 TTFT / ITL / Throughput 等重要指标。
 ### 运行方式
 
 ```bash
@@ -178,7 +206,30 @@ vllm bench serve \
 | `summary.json` | 所有配置的中位数指标汇总 |
 
 ## Task 3：自定义调度策略对比
+### 目标
+真正理解调度器，本 Task 需要替换 vLLM V1 的 Scheduler，实现自设计策略，并与默认策略对比。
+### Scheduler 源码（感兴趣可自行阅读了解默认调度器设计）
+V1 Scheduler 入口位于 vllm/v1/core/sched/scheduler.py，关键类为 Scheduler，核心方法是 schedule() -> SchedulerOutput，每个调度步被 EngineCore 调用一次。其职责大致是：
 
+遍历 self.running（正在 decode 的请求）与 self.waiting（排队中的请求）
+按某种策略选出这一步要跑的请求集合，并决定每个请求处理多少 token（decode 只跑 1 个 token；prefill 可跑 1 到 chunk_size 个 token）
+调用 KVCacheManager 为它们分配 block
+返回 SchedulerOutput，由 ModelRunner 执行一次 forward
+vLLM V1 预留了自定义 scheduler 注入点：SchedulerConfig.scheduler_cls 字段可直接传一个类（或 "mod.submod.MyScheduler" 字符串），所以你不需要 fork vLLM 源码，只需继承 vllm.v1.core.sched.scheduler.Scheduler 并覆写 schedule()来设计你自己的调度器。
+
+### 策略 A：Step-Exclusive Prefill-First（TTFT 优化型）
+行为：每个调度步判断：
+
+如果 waiting 队列非空 → 只调度 prefill（不混入 decode），按 token budget 一次塞尽量多的完整 prompt
+否则 → 只调度 decode
+实现提示：
+
+在 schedule() 入口判断 len(self.waiting) > 0，当有等待队列（waiting 非空）时，临时隐藏 running 队列（设为空列表），调用父类调度器 → 此时父类只能看到 prefill 请求，所以这一整步只做 prefill
+一步只产出纯 prefill batch 或 纯 decode batch，没有混合
+预期现象：TTFT 低（新请求一来就被处理），但 ITL 严重恶化（decode 被长 prefill 整体阻塞），且 GPU 利用率低（因为decode是访存密集，prefill是计算密集，默认的混合调度通过任务类型互补可填充 pipeline 的气泡）。
+
+### 策略 B
+pure-decode · Pure Decode-First：running 不空就只跑 decode，绝不混批 prefill，与策略 A 相反：waiting 让位给 running
 ### 运行方式
 
 ```bash
@@ -200,7 +251,7 @@ bash task3.sh 2>&1 | tee task3_output.log
 |------|------|
 | vLLM V1 默认 | 默认混合调度：prefill 与 decode 混合批处理 |
 | 策略 A: Step-Exclusive Prefill-First | 每步只调度一种类型（waiting 非空时只 prefill，否则只 decode），降低 TTFT 但恶化 ITL |
-| 策略 B3: Adaptive Chunk-Size | 根据 running 队列拥挤程度动态调整 prefill token budget：空闲时放大降 TTFT，拥挤时缩小保 ITL |
+| 策略 B: Pure Decode-First | running 不空就只跑 decode，绝不混批 prefill，与策略 A 相反：waiting 让位给 running |
 
 ### 可配置参数
 
