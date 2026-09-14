@@ -1,6 +1,84 @@
-# 基于 vLLM 的 Prefill/Decode 调度策略实现
+# 🚀 vLLM Prefill / Decode Scheduler Playground
 
+> Exploring LLM inference performance from **PagedAttention** and
+> **Continuous Batching** to custom **Prefill / Decode scheduling** on vLLM V1.
 
+一个面向 LLM Inference / Serving 学习的 vLLM 调度器开源项目。
+
+本项目从 Hugging Face `transformers` baseline 出发，逐步分析
+vLLM 的 PagedAttention、Continuous Batching、Chunked Prefill，
+并进一步修改 vLLM V1 Scheduler，实现不同的 Prefill / Decode
+调度策略，分析 TTFT、ITL 和 Throughput 之间的权衡。
+
+---
+
+## ✨ Features
+
+- ⚡ Transformers vs vLLM 端到端性能对比
+- 🧠 PagedAttention / KV Cache 内存分析
+- 🔄 Continuous Batching 性能分析
+- 🧩 Chunked Prefill 参数扫描
+- 🎛 `max_num_batched_tokens` Benchmark
+- 🛠 自定义 vLLM V1 Scheduler
+- 🚀 Step-Exclusive Prefill-First
+- 🟢 Pure Decode-First
+- 📊 TTFT / ITL / Throughput Benchmark
+- 📈 P50 / P99 / CDF 长尾延迟分析
+- 🔬 一键复现实验脚本
+
+---
+
+# 🧠 Why This Project?
+
+LLM Serving 的性能并不只是：
+
+> “模型 forward 跑得有多快？”
+
+真正影响在线推理性能的还有：
+
+- KV Cache 如何分配
+- 请求何时进入 batch
+- 已完成请求何时释放
+- Prefill 是否切 chunk
+- Decode 是否被 Prefill 阻塞
+- 每个 scheduling step 分配多少 token
+- TTFT 与 ITL 如何取舍
+
+因此，本项目尝试从 **内存管理 + batching + scheduling**
+三个层面理解 vLLM。
+
+---
+
+# 🏗 Architecture
+
+```text
+Incoming Requests
+       │
+       ▼
+┌─────────────────────┐
+│   vLLM Scheduler    │
+│                     │
+│ waiting   running   │
+│ Prefill   Decode    │
+└─────────┬───────────┘
+          │
+          ▼
+┌─────────────────────┐
+│ Continuous Batching │
+└─────────┬───────────┘
+          │
+          ▼
+┌─────────────────────┐
+│   PagedAttention    │
+│    KV Block Pool    │
+└─────────┬───────────┘
+          │
+          ▼
+        GPU
+
+```
+
+# 开始
 ## 环境依赖
 
 ```bash
@@ -173,3 +251,5 @@ vllm bench serve \
 | `figure_3A_itl_cdf.png` | 图 3A：ITL CDF 曲线 |
 | `figure_3A_combined.png` | 图 3A：TTFT + ITL CDF 并排对比图 |
 | `comparison_table.md` |  Markdown 表格 |
+
+
